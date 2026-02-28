@@ -349,18 +349,21 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("Industry Exposure")
-    fig = px.pie(industry_exposure, values=industry_exposure.values, names=industry_exposure.index, 
+    industry_exposure_display = industry_exposure.copy()
+    industry_exposure_display.index = industry_exposure_display.index.str.replace('_', ' ').str.title()
+    fig = px.pie(industry_exposure_display, values=industry_exposure_display.values, names=industry_exposure_display.index, 
                  hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
-    fig.update_traces(textposition='inside', textinfo='percent+label')
+    fig.update_traces(textposition='inside', textinfo='percent+label', hovertemplate='<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>')
     fig.update_layout(showlegend=False)
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
 with col2:
     st.subheader("Region Exposure")
     region_exposure = df.groupby("region")["loan_amount"].sum()
+    region_exposure.index = region_exposure.index.str.replace('_', ' ').str.title()
     fig = px.pie(region_exposure, values=region_exposure.values, names=region_exposure.index,
                  hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
-    fig.update_traces(textposition='inside', textinfo='percent+label')
+    fig.update_traces(textposition='inside', textinfo='percent+label', hovertemplate='<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>')
     fig.update_layout(showlegend=False)
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
@@ -432,13 +435,17 @@ df_temp["stressed_el"] = stressed_pd * lgd * df_temp["loan_amount"]
 industry_stress = df_temp.groupby("industry")[["base_el", "stressed_el"]].sum()
 industry_stress["increase"] = industry_stress["stressed_el"] - industry_stress["base_el"]
 industry_stress = industry_stress.sort_values("increase", ascending=False).reset_index()
+industry_stress["industry"] = industry_stress["industry"].str.replace('_', ' ').str.title()
 
 fig = px.bar(industry_stress, x="industry", y=["base_el", "stressed_el"],
              barmode="group", 
-             labels={"value": "Expected Loss ($)", "industry": "Industry", "base_el": "Base", "stressed_el": "Stressed"},
+             labels={"value": "Expected Loss ($)", "industry": "Industry"},
              color_discrete_sequence=["#636EFA", "#EF553B"])
 fig.update_layout(legend_title_text="Scenario", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-fig.for_each_trace(lambda t: t.update(name=t.name.replace("base_el", "Base").replace("stressed_el", "Stressed")))
+fig.for_each_trace(lambda t: t.update(
+    name="Base" if "base" in t.name else "Stressed",
+    hovertemplate='<b>%{x}</b><br>%{fullData.name}: $%{y:,.0f}<extra></extra>'
+))
 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
 st.divider()
@@ -446,7 +453,12 @@ st.divider()
 # Risk Engine Analytics
 st.markdown("## Risk Engine Analytics")
 
-LGD = 0.60
+col_lgd, col_thresh = st.columns(2)
+with col_lgd:
+    LGD = st.slider("LGD Assumption", 0.3, 0.8, 0.6, 0.05, help="Loss Given Default percentage")
+with col_thresh:
+    concentration_threshold = st.slider("Concentration Threshold", 0.15, 0.50, 0.30, 0.05, help="Alert threshold for industry concentration")
+
 expected_loss = (df["default_probability_true"] * LGD * df["loan_amount"]).sum()
 loss_ratio = expected_loss / total_portfolio_value
 
@@ -467,10 +479,17 @@ with col4:
 
 # Risk Bucketing
 df_risk = df.copy()
+
+col_low, col_med = st.columns(2)
+with col_low:
+    low_threshold = st.slider("Low Risk Threshold", 0.01, 0.10, 0.05, 0.01, help="PD threshold for low risk classification")
+with col_med:
+    med_threshold = st.slider("Medium Risk Threshold", 0.06, 0.20, 0.12, 0.01, help="PD threshold for medium risk classification")
+
 def risk_bucket(pd_value):
-    if pd_value < 0.05:
+    if pd_value < low_threshold:
         return "Low Risk"
-    elif pd_value < 0.12:
+    elif pd_value < med_threshold:
         return "Medium Risk"
     else:
         return "High Risk"
@@ -490,6 +509,7 @@ with col1:
                  color="Risk Bucket",
                  color_discrete_map={"Low Risk": "#2ecc71", "Medium Risk": "#f39c12", "High Risk": "#e74c3c"})
     fig.update_layout(showlegend=False)
+    fig.update_traces(hovertemplate='<b>%{x}</b><br>Total Exposure: $%{y:,.0f}<extra></extra>')
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
 with col2:
@@ -514,5 +534,86 @@ if len(industry_conc) > 0:
         "Concentration %": (industry_conc.values * 100).round(2)
     })
     st.dataframe(conc_df, use_container_width=True, hide_index=True)
+
+st.divider()
+
+# Scenario Analysis
+st.header("Scenario Analysis")
+
+tabs = st.tabs(["Recession", "Interest Rate Shock", "Industry Crash"])
+
+with tabs[0]:
+    st.subheader("Recession Scenario")
+    recession_mult = st.slider("Recession PD Multiplier", 1.0, 4.0, 2.5, 0.1, key="recession")
+    recession_pd = np.minimum(df["predicted_pd"] * recession_mult, 0.99)
+    recession_loss = (recession_pd * lgd * df["loan_amount"]).sum()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Base Loss", f"${base_loss:,.0f}")
+        st.metric("Recession Loss", f"${recession_loss:,.0f}", delta=f"{((recession_loss-base_loss)/base_loss*100):.1f}%", delta_color="inverse")
+    
+    with col2:
+        scenario_data = pd.DataFrame({
+            "Scenario": ["Base", "Recession"],
+            "Expected Loss": [base_loss, recession_loss]
+        })
+        fig = px.bar(scenario_data, x="Scenario", y="Expected Loss", color="Scenario",
+                     color_discrete_map={"Base": "#636EFA", "Recession": "#EF553B"})
+        fig.update_layout(showlegend=False)
+        fig.update_traces(hovertemplate='<b>%{x}</b><br>$%{y:,.0f}<extra></extra>')
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+with tabs[1]:
+    st.subheader("Interest Rate Shock")
+    rate_mult = st.slider("Rate Shock PD Multiplier", 1.0, 3.0, 1.8, 0.1, key="rate")
+    rate_shock_pd = np.minimum(df["predicted_pd"] * rate_mult, 0.99)
+    rate_shock_loss = (rate_shock_pd * lgd * df["loan_amount"]).sum()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Base Loss", f"${base_loss:,.0f}")
+        st.metric("Rate Shock Loss", f"${rate_shock_loss:,.0f}", delta=f"{((rate_shock_loss-base_loss)/base_loss*100):.1f}%", delta_color="inverse")
+    
+    with col2:
+        scenario_data = pd.DataFrame({
+            "Scenario": ["Base", "Rate Shock"],
+            "Expected Loss": [base_loss, rate_shock_loss]
+        })
+        fig = px.bar(scenario_data, x="Scenario", y="Expected Loss", color="Scenario",
+                     color_discrete_map={"Base": "#636EFA", "Rate Shock": "#FF6692"})
+        fig.update_layout(showlegend=False)
+        fig.update_traces(hovertemplate='<b>%{x}</b><br>$%{y:,.0f}<extra></extra>')
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+with tabs[2]:
+    st.subheader("Industry-Specific Crash")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        crash_industry = st.selectbox("Select Industry", df["industry"].unique())
+    with col_b:
+        crash_mult = st.slider("Industry Crash PD Multiplier", 1.0, 5.0, 3.0, 0.1, key="crash")
+    
+    df_crash = df.copy()
+    df_crash.loc[df_crash["industry"] == crash_industry, "crash_pd"] = np.minimum(df_crash.loc[df_crash["industry"] == crash_industry, "predicted_pd"] * crash_mult, 0.99)
+    df_crash["crash_pd"].fillna(df_crash["predicted_pd"], inplace=True)
+    crash_loss = (df_crash["crash_pd"] * lgd * df_crash["loan_amount"]).sum()
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Base Loss", f"${base_loss:,.0f}")
+        st.metric(f"{crash_industry} Crash Loss", f"${crash_loss:,.0f}", delta=f"{((crash_loss-base_loss)/base_loss*100):.1f}%", delta_color="inverse")
+    
+    with col2:
+        industry_impact = df_crash.groupby("industry").apply(
+            lambda x: (x["crash_pd"] * lgd * x["loan_amount"]).sum()
+        ).reset_index(name="Loss")
+        industry_impact = industry_impact.sort_values("Loss", ascending=False).head(5)
+        industry_impact["industry"] = industry_impact["industry"].str.replace('_', ' ').str.title()
+        
+        fig = px.bar(industry_impact, x="industry", y="Loss", color="industry")
+        fig.update_layout(showlegend=False, xaxis_title="Industry", yaxis_title="Expected Loss ($)")
+        fig.update_traces(hovertemplate='<b>%{x}</b><br>Expected Loss: $%{y:,.0f}<extra></extra>')
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
 st.divider()
