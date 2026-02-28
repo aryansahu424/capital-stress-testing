@@ -144,9 +144,9 @@ df = load_data()
 # Train Model
 # --------------------------------------------------
 @st.cache_resource
-def train_model(X, y):
-    model = HistGradientBoostingClassifier()
-    model.fit(X, y)
+def train_model(X_train, y_train):
+    model = HistGradientBoostingClassifier(random_state=42)
+    model.fit(X_train, y_train)
     return model
 
 features = [
@@ -158,13 +158,18 @@ features = [
     "loan_term_months",
 ]
 
+from sklearn.model_selection import train_test_split
+
 X = df[features]
 y = df["default_flag"]
 
-model = train_model(X, y)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+model = train_model(X_train, y_train)
 
 df["predicted_pd"] = model.predict_proba(X)[:, 1]
-model_auc = roc_auc_score(y, df["predicted_pd"])
+y_test_pred = model.predict_proba(X_test)[:, 1]
+model_auc = roc_auc_score(y_test, y_test_pred)
 
 # --------------------------------------------------
 # Portfolio Metrics
@@ -339,6 +344,14 @@ def chat_with_ai(user_message):
         starting_rwa_default = 800.0
         starting_ratio_calc = (starting_cet1_default / starting_rwa_default) * 100
         
+        # Safe access to risk distribution
+        low_risk_amt = risk_dist.loc['Low Risk', 'loan_amount'] if 'Low Risk' in risk_dist.index else 0
+        low_risk_cnt = risk_dist.loc['Low Risk', 'loan_id'] if 'Low Risk' in risk_dist.index else 0
+        med_risk_amt = risk_dist.loc['Medium Risk', 'loan_amount'] if 'Medium Risk' in risk_dist.index else 0
+        med_risk_cnt = risk_dist.loc['Medium Risk', 'loan_id'] if 'Medium Risk' in risk_dist.index else 0
+        high_risk_amt = risk_dist.loc['High Risk', 'loan_amount'] if 'High Risk' in risk_dist.index else 0
+        high_risk_cnt = risk_dist.loc['High Risk', 'loan_id'] if 'High Risk' in risk_dist.index else 0
+        
         context = f"""
 PORTFOLIO OVERVIEW:
 - Total Exposure: ${total_portfolio_value:,.0f}
@@ -362,9 +375,9 @@ RISK ENGINE ANALYTICS:
 - Expected Loss (LGD=60%): ${expected_loss:,.0f}
 - Loss Ratio: {loss_ratio:.2%}
 - Risk Distribution:
-  Low Risk (<5% PD): ${risk_dist.loc['Low Risk', 'loan_amount']:,.0f} ({risk_dist.loc['Low Risk', 'loan_id']:,} loans)
-  Medium Risk (5-12% PD): ${risk_dist.loc['Medium Risk', 'loan_amount']:,.0f} ({risk_dist.loc['Medium Risk', 'loan_id']:,} loans)
-  High Risk (>12% PD): ${risk_dist.loc['High Risk', 'loan_amount']:,.0f} ({risk_dist.loc['High Risk', 'loan_id']:,} loans)
+  Low Risk (<5% PD): ${low_risk_amt:,.0f} ({low_risk_cnt:,} loans)
+  Medium Risk (5-12% PD): ${med_risk_amt:,.0f} ({med_risk_cnt:,} loans)
+  High Risk (>12% PD): ${high_risk_amt:,.0f} ({high_risk_cnt:,} loans)
 
 STRESS TESTING SCENARIOS:
 - Base Expected Loss: ${base_loss:,.0f}
@@ -536,7 +549,7 @@ st.divider()
 
 # Stress Test
 st.header("Stress Testing")
-with st.expander("ℹ️ How Stress Testing Works"):
+with st.expander("How Stress Testing Works"):
     st.markdown("""
     **Calculation Logic:**
     - Stressed PD = min(Base PD × Multiplier, 0.99)
@@ -565,7 +578,7 @@ base_loss = (df["predicted_pd"] * LGD * df["loan_amount"]).sum()
 stressed_pd = np.minimum(df["predicted_pd"] * multiplier, 0.99)
 projected_loss = (stressed_pd * LGD * df["loan_amount"]).sum()
 loss_increase = projected_loss - base_loss
-pct_increase = (loss_increase / base_loss) * 100
+pct_increase = (loss_increase / base_loss * 100) if base_loss > 0 else 0
 
 with col_chart:
     metric_col1, metric_col2, metric_col3 = st.columns(3)
@@ -601,7 +614,7 @@ st.divider()
 
 # Risk Engine Analytics
 st.markdown("## Risk Engine Analytics")
-with st.expander("ℹ️ Risk Engine Methodology"):
+with st.expander("Risk Engine Methodology"):
     st.markdown("""
     **Expected Loss Formula:**
     - EL = PD × LGD × EAD
@@ -623,7 +636,7 @@ with col_conc:
     concentration_threshold = st.slider("Concentration Threshold", 0.15, 0.50, 0.30, 0.05, help="Alert threshold for industry concentration")
 
 expected_loss = (df["predicted_pd"] * LGD * df["loan_amount"]).sum()
-loss_ratio = expected_loss / total_portfolio_value
+loss_ratio = (expected_loss / total_portfolio_value) if total_portfolio_value > 0 else 0
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
@@ -703,7 +716,7 @@ st.divider()
 
 # Scenario Analysis
 st.header("Scenario Analysis")
-with st.expander("ℹ️ Scenario Analysis Guide"):
+with st.expander("Scenario Analysis Guide"):
     st.markdown("""
     **Three Stress Scenarios:**
     1. **Recession**: Economy-wide downturn (1.0x-4.0x PD multiplier)
@@ -720,6 +733,7 @@ with tabs[0]:
     col_rec1, col_rec2 = st.columns([1, 2])
     with col_rec1:
         recession_mult = st.slider("Recession PD Multiplier", 1.0, 4.0, 2.5, 0.1, key="recession")
+        st.session_state['recession_mult'] = recession_mult
         
     recession_pd = np.minimum(df["predicted_pd"] * recession_mult, 0.99)
     recession_loss = (recession_pd * LGD * df["loan_amount"]).sum()
@@ -807,13 +821,13 @@ with tabs[2]:
 st.divider()
 
 st.header("Capital Stress Engine (9-Quarter Projection)")
-with st.expander("ℹ️ Capital Stress Engine Methodology"):
+with st.expander("Capital Stress Engine Methodology"):
     st.markdown("""
     **Quarterly Capital Movement:**
     ```
-    Capital += PPNR - Credit Losses - Trading Losses - Op Losses
-    Tax = Capital × Tax Rate
-    Capital -= Tax
+    Net Income = PPNR - Credit Losses - Trading Losses - Op Losses
+    Tax = Net Income × Tax Rate (only on positive income)
+    Capital += Net Income - Tax
     Dividend = Dividend Payout (suspended if capital < starting level)
     Capital -= Dividend
     ```
@@ -821,7 +835,7 @@ with st.expander("ℹ️ Capital Stress Engine Methodology"):
     **Key Components:**
     - **PPNR**: Pre-Provision Net Revenue (declines over stress period)
     - **Credit Losses**: Front-loaded (realistic recession pattern)
-    - **RWA Inflation**: Risk-weighted assets increase with cumulative losses
+    - **RWA Inflation**: Modeled as linear stress expansion reflecting rating migration, market RWAs, and counterparty risk
     - **CET1 Ratio**: Capital / RWA × 100
     
     **Regulatory Buffers:**
@@ -843,11 +857,18 @@ with col2:
 with col3:
     regulatory_min = st.number_input("Regulatory Minimum CET1 (%)", value=10.5)
 
-starting_ratio = (starting_cet1 / starting_rwa) * 100
+starting_ratio = (starting_cet1 / starting_rwa * 100) if starting_rwa > 0 else 0
 
 st.metric("Starting CET1 Ratio", f"{starting_ratio:.2f}%")
 
 st.subheader("Stress Assumptions")
+
+col_integrate = st.columns(1)[0]
+with col_integrate:
+    integrate_portfolio = st.checkbox("Integrate Portfolio Stress into Capital Engine", value=False, help="Use recession scenario stressed EL to calculate 9Q credit losses")
+
+if integrate_portfolio:
+    st.info("Capital Engine will use Recession Scenario stressed losses from Scenario Analysis section")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -855,7 +876,15 @@ with col1:
     total_ppnr = st.slider("9Q PPNR ($B)", 0.0, 80.0, 40.0)
 
 with col2:
-    total_credit_losses = st.slider("9Q Credit Losses ($B)", 0.0, 80.0, 35.0)
+    if integrate_portfolio:
+        recession_mult_from_scenario = st.session_state.get('recession_mult', 2.5)
+        recession_pd_integrated = np.minimum(df["predicted_pd"] * recession_mult_from_scenario, 0.99)
+        recession_loss_integrated = (recession_pd_integrated * LGD * df["loan_amount"]).sum() / 1e9
+        total_credit_losses = recession_loss_integrated
+        st.slider("9Q Credit Losses ($B)", 0.0, 80.0, float(total_credit_losses), disabled=True)
+        st.caption(f"Model-derived: {recession_mult_from_scenario:.1f}x PD × LGD × EAD")
+    else:
+        total_credit_losses = st.slider("9Q Credit Losses ($B)", 0.0, 80.0, 35.0)
 
 with col3:
     total_trading_losses = st.slider("Trading Losses ($B)", 0.0, 30.0, 8.0)
@@ -863,11 +892,26 @@ with col3:
 with col4:
     total_op_losses = st.slider("Operational Losses ($B)", 0.0, 20.0, 5.0)
 
-col_rwa, col_ppnr = st.columns(2)
+col_rwa, col_ppnr, col_link, col_mult = st.columns(4)
 with col_rwa:
     rwa_inflation_pct = st.slider("RWA Inflation (%)", 0.0, 30.0, 12.5)
 with col_ppnr:
     ppnr_decline_rate = st.slider("PPNR Decline Rate", 0.0, 0.5, 0.4, 0.05, help="Rate at which PPNR declines over 9 quarters")
+with col_link:
+    link_rwa_to_pd = st.checkbox("Link RWA to PD Migration", value=False, help="Dynamically link RWA inflation to average PD increase")
+with col_mult:
+    rwa_pd_multiplier = st.slider("RWA-PD Multiplier", 0.0, 2.0, 0.75, 0.05, help="Multiplier for PD migration to RWA inflation")
+
+# Calculate base average PD
+base_avg_pd = df["predicted_pd"].mean()
+
+# Calculate stressed average PD from credit losses
+stressed_avg_pd = (total_credit_losses / (LGD * total_portfolio_value)) if (LGD * total_portfolio_value) > 0 else 0
+pd_migration_pct = ((stressed_avg_pd / base_avg_pd) - 1) * 100 if base_avg_pd > 0 else 0
+
+if link_rwa_to_pd:
+    rwa_inflation_pct = max(0, pd_migration_pct * rwa_pd_multiplier)
+    st.caption(f"RWA Inflation (PD-linked): {rwa_inflation_pct:.1f}% (PD migration: {pd_migration_pct:.1f}%)")
 
 # -----------------------------
 # 9-Quarter Projection
@@ -875,8 +919,7 @@ with col_ppnr:
 quarters = np.arange(1, 10)
 
 # Spread PPNR with decline
-# Convert % decline to decimal
-decline = ppnr_decline_rate / 100  
+decline = ppnr_decline_rate  
 
 # Build stress path dynamically
 ppnr_shape = np.array([
@@ -911,6 +954,7 @@ for q in range(9):
 
 capital_path_adj = np.array(capital_path_adj)
 rwa_path = np.linspace(starting_rwa, starting_rwa * (1 + rwa_inflation_pct/100), 9)
+rwa_path = np.where(rwa_path == 0, 1e-10, rwa_path)  # Prevent division by zero
 cet1_ratio_path = (capital_path_adj / rwa_path) * 100
 ending_ratio = cet1_ratio_path[-1]
 
@@ -966,11 +1010,11 @@ else:
 st.divider()
 
 st.subheader("Advanced Capital Controls")
-with st.expander("ℹ️ Advanced Controls Explained"):
+with st.expander("Advanced Controls Explained"):
     st.markdown("""
-    **Tax Rate**: Applied to capital balance each quarter
+    **Tax Rate**: Applied to quarterly net income (PPNR - losses), not capital balance
     
-    **Dividend Payout**: Fixed amount paid per quarter (can be suspended)
+    **Dividend Payout**: Percentage of post-tax income paid as dividends (can be suspended)
     
     **Management Overlay**: Additional loss buffer applied to final quarter
     
@@ -991,48 +1035,60 @@ with col3:
 with col4:
     suspend_dividends = st.checkbox("Suspend Dividends If Capital Falls", value=False)
 
-col_buf1, col_buf2 = st.columns(2)
+col_buf1, col_buf2, col_scb = st.columns(3)
 with col_buf1:
     ccb = st.slider("Capital Conservation Buffer (%)", 0.0, 5.0, 2.5, 0.5, help="CCB requirement")
 with col_buf2:
     gsib = st.slider("G-SIB Buffer (%)", 0.0, 3.5, 1.5, 0.5, help="Global Systemically Important Bank buffer")
+with col_scb:
+    scb_floor = st.slider("SCB Floor (%)", 0.0, 5.0, 2.5, 0.5, help="Minimum Stress Capital Buffer")
 
 # Recalculate capital with advanced controls
 capital_path_adj = []
+pre_div_capital_path = []
 capital = starting_cet1
 dividends_paid = []
+taxes_paid = []
 
 for q in range(9):
-    capital += (
-        ppnr_path[q]
-        - credit_loss_path[q]
-        - trading_path[q]
-        - op_path[q]
-    )
-
-    tax = max(capital * tax_rate, 0)
-    capital -= tax
+    net_income = ppnr_path[q] - credit_loss_path[q] - trading_path[q] - op_path[q]
+    tax = max(net_income * tax_rate, 0)
+    taxes_paid.append(tax)
+    
+    capital += net_income - tax
+    pre_div_capital_path.append(capital)
+    
+    post_tax_income = net_income - tax
 
     # Dynamic dividend logic
     if suspend_dividends and capital < starting_cet1:
         dividend = 0
     else:
-        dividend = dividend_payout
+        dividend = max(post_tax_income * dividend_payout, 0)
 
     capital -= dividend
     dividends_paid.append(dividend)
 
     capital_path_adj.append(capital)
 
+pre_div_capital_path = np.array(pre_div_capital_path)
 capital_path_adj = np.array(capital_path_adj)
 capital_path_adj[-1] -= management_overlay
 total_dividend_cum = sum(dividends_paid)
+total_tax_cum = sum(taxes_paid)
 
 cumulative_loss_pct = np.cumsum(credit_loss_path) / total_credit_losses
-rwa_path_adj = starting_rwa * (1 + cumulative_loss_pct * rwa_inflation_pct/100)
+rwa_path_adj = np.linspace(starting_rwa, starting_rwa * (1 + rwa_inflation_pct/100), 9)
+rwa_path_adj = np.where(rwa_path_adj == 0, 1e-10, rwa_path_adj)  # Prevent division by zero
 cet1_ratio_path_adj = (capital_path_adj / rwa_path_adj) * 100
 min_ratio = cet1_ratio_path_adj.min()
-scb = starting_ratio - min_ratio
+
+# SCB based on pre-dividend capital (CCAR-compliant)
+pre_div_cet1_ratio = (pre_div_capital_path / rwa_path_adj) * 100
+min_ratio_pre_div = pre_div_cet1_ratio.min()
+scb_raw = starting_ratio - min_ratio_pre_div
+scb = max(scb_raw, scb_floor)
+
 ratio_drop = starting_ratio - min_ratio
 
 # Enhanced Chart with Buffer Requirements
@@ -1048,12 +1104,16 @@ fig2.add_trace(go.Scatter(
     line=dict(dash="dash", color="#EF553B", width=2)
 ))
 
+# In real CCAR: SCB replaces CCB, so total requirement = Regulatory Min + max(SCB, CCB) + G-SIB
+# Simplified here: total_required = regulatory_min + ccb + gsib (SCB shown separately)
 total_required = regulatory_min + ccb + gsib
 
 fig2.add_trace(go.Scatter(
-    x=quarters, y=[total_required]*9, mode="lines", name="Total Buffer Requirement",
+    x=quarters, y=[total_required]*9, mode="lines", name="Total Requirement (Min+CCB+G-SIB)",
     line=dict(dash="dot", color="orange", width=2)
 ))
+
+st.caption(f"Note: In CCAR, SCB ({scb:.2f}%) replaces CCB. Simplified model shows both.")
 
 fig2.update_layout(
     title="Adjusted 9-Quarter CET1 Ratio with Buffers",
@@ -1100,22 +1160,22 @@ shortfall = regulatory_min - min_ratio
 if shortfall > 0:
     st.metric("Capital Shortfall", f"{shortfall:.2f}%")
 
-breach_quarters = quarters[cet1_ratio_path_adj < regulatory_min]
+breach_quarters = quarters[cet1_ratio_path_adj < total_required]
 if len(breach_quarters) > 0:
-    st.error(f"WARNING: Capital breach occurs in Quarter(s): {breach_quarters.tolist()}")
+    st.error(f"WARNING: CET1 falls below total buffer requirement in Quarter(s): {breach_quarters.tolist()}")
 else:
     st.success("OK: No capital breaches under adjusted scenario")
 
 st.divider()
 
 st.subheader("Capital Waterfall (9-Quarter Cumulative)")
-with st.expander("ℹ️ Waterfall Chart Explanation"):
+with st.expander("Waterfall Chart Explanation"):
     st.markdown("""
     **Capital Movement Breakdown:**
     - Starting CET1: Initial capital position
     - PPNR: Adds to capital (pre-provision revenue)
     - Credit/Trading/Op Losses: Reduce capital
-    - Taxes: Applied to capital balance
+    - Taxes: Applied to quarterly pre-tax income (PPNR - losses), not to capital
     - Dividends: Paid to shareholders (if not suspended)
     - Management Overlay: Additional prudential buffer
     - Ending CET1: Final capital position after 9 quarters
@@ -1126,12 +1186,34 @@ total_ppnr_cum = ppnr_path.sum()
 total_credit_loss_cum = credit_loss_path.sum()
 total_trading_cum = trading_path.sum()
 total_op_cum = op_path.sum()
-total_tax_cum = sum([max(capital_path_adj[q] * tax_rate, 0) for q in range(9)])
 
+# Verify waterfall calculation
+calc_check = (
+    starting_cet1
+    + total_ppnr_cum
+    - total_credit_loss_cum
+    - total_trading_cum
+    - total_op_cum
+    - total_tax_cum
+    - total_dividend_cum
+    - management_overlay
+)
+if abs(calc_check - capital_path_adj[-1]) > 0.1:
+    st.error(f"Waterfall calculation mismatch detected: {calc_check:.2f}B vs {capital_path_adj[-1]:.2f}B")
+ending_cet1 = (
+    starting_cet1
+    + total_ppnr_cum
+    - total_credit_loss_cum
+    - total_trading_cum
+    - total_op_cum
+    - total_tax_cum
+    - total_dividend_cum
+    - management_overlay
+)
 # Waterfall data
 waterfall_labels = ["Starting CET1", "PPNR", "Credit Losses", "Trading Losses", "Op Losses", "Taxes", "Dividends", "Mgmt Overlay", "Ending CET1"]
-waterfall_values = [starting_cet1, total_ppnr_cum, -total_credit_loss_cum, -total_trading_cum, -total_op_cum, -total_tax_cum, -total_dividend_cum, -management_overlay, 0]
-waterfall_measure = ["absolute", "relative", "relative", "relative", "relative", "relative", "relative", "relative", "total"]
+waterfall_values = [starting_cet1, total_ppnr_cum, -total_credit_loss_cum, -total_trading_cum, -total_op_cum, -total_tax_cum, -total_dividend_cum, -management_overlay, ending_cet1]
+waterfall_measure = ["absolute", "relative", "relative", "relative", "relative", "relative", "relative", "relative", "absolute"]
 
 fig_waterfall = go.Figure(go.Waterfall(
     x=waterfall_labels,

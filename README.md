@@ -1,6 +1,6 @@
 # Capital Stress Testing Engine
 
-An AI-powered credit risk portfolio monitoring dashboard built with Streamlit, featuring real-time analytics, stress testing, scenario analysis, and executive-level risk commentary.
+An AI-powered credit risk portfolio monitoring dashboard built with Streamlit, featuring real-time analytics, stress testing, scenario analysis, integrated portfolio-capital engines, and executive-level risk commentary.
 
 **Live Demo:** [https://portfolio-analytics-ai.streamlit.app/](https://portfolio-analytics-ai.streamlit.app/)
 
@@ -27,10 +27,13 @@ An AI-powered credit risk portfolio monitoring dashboard built with Streamlit, f
 
 ### Capital Stress Engine
 - **9-Quarter Projection**: Forward-looking capital adequacy analysis
-- **Advanced Controls**: Tax rates, dividend policies, management overlays
+- **Integrated Portfolio-Capital Engine**: Recession scenario stressed EL feeds directly into 9Q credit losses (optional)
+- **Dynamic RWA-PD Linkage**: RWA inflation dynamically linked to PD migration (optional)
+- **Advanced Controls**: Tax rates, dividend policies, management overlays with quarterly timing
 - **Regulatory Buffers**: CCB and G-SIB buffer monitoring with visual indicators
 - **Capital Waterfall**: Cumulative capital movement breakdown
 - **Breach Detection**: Automatic alerts for regulatory minimum violations
+- **CCAR-Compliant SCB**: Stress Capital Buffer calculated on pre-dividend capital path with 2.5% floor
 
 ### AI Risk Commentary
 - **Executive Summaries**: AI-powered risk analysis powered by Llama 3.2 via Hugging Face
@@ -38,6 +41,7 @@ An AI-powered credit risk portfolio monitoring dashboard built with Streamlit, f
 - **Context-Aware**: Includes Expected Loss, Loss Ratio, delinquency rates, top industries/regions, and riskiest loans
 
 ### Additional Features
+- **Out-of-Sample Model Validation**: 80/20 train/test split with stratification for unbiased AUC reporting
 - **Interactive Tooltips**: Hover tooltips on all key financial terminologies explaining concepts
 - **Info Expanders**: Expandable sections explaining calculation logic for each module
 - **Data Generation**: Built-in synthetic loan data generator with realistic distributions
@@ -95,12 +99,15 @@ streamlit run app.py
 
 ### Main Dashboard (`app.py`)
 - Portfolio metrics calculation with caching
-- ML model training (HistGradientBoostingClassifier) with cache_resource
+- ML model training with 80/20 train/test split and out-of-sample AUC validation
 - Interactive visualizations with Plotly
+- Integrated portfolio-capital stress engine (recession scenario → 9Q credit losses)
+- Dynamic RWA inflation linked to PD migration (0.75x multiplier)
 - AI-powered risk analysis with comprehensive context
 - Custom CSS for tooltips and styling
 - Info expanders for calculation methodology
 - Modular section-based navigation
+- CCAR-compliant SCB calculation on pre-dividend capital path
 
 ### Section Mapping (`app_sections.py`)
 - Organized navigation structure
@@ -184,6 +191,8 @@ See `requirements.txt` for full dependencies:
 - `@st.cache_resource` for model training
 - Efficient data aggregations
 - Optimized chart rendering
+- Division-by-zero protection across all calculations
+- Safe DataFrame index access to prevent KeyErrors
 
 ## Calculation Logic
 
@@ -218,17 +227,34 @@ CET1 Ratio = CET1 Capital / RWA × 100
 **Quarterly Capital Movement:**
 ```
 For each quarter q:
-  Capital += PPNR[q] - Credit Losses[q] - Trading Losses[q] - Op Losses[q]
-  Tax = Capital × Tax Rate (slider)
-  Capital -= Tax
-  Dividend = Dividend Payout (slider, suspended if checkbox enabled and capital < starting level)
+  Net Income = PPNR[q] - Credit Losses[q] - Trading Losses[q] - Op Losses[q]
+  Tax = max(Net Income × Tax Rate, 0)  # Only on positive income
+  Capital += Net Income - Tax
+  
+  # Apply management overlay in specified quarter (Q1/Q2/Q9)
+  if q == overlay_quarter:
+    Capital -= Management Overlay
+  
+  Post-Tax Income = Net Income - Tax
+  Dividend = max(Post-Tax Income × Dividend Payout, 0)  # Suspended if capital < starting level
   Capital -= Dividend
 ```
+
+**Integrated Portfolio-Capital Engine:**
+- Optional integration: Recession scenario stressed EL → 9Q credit losses
+- Calculation: `Stressed PD × LGD × EAD` from portfolio feeds capital engine
+- Economically connects portfolio stress to capital adequacy
+
+**Dynamic RWA-PD Linkage:**
+- Optional: RWA inflation dynamically linked to PD migration
+- Formula: `RWA Inflation = max(0, PD Migration % × RWA-PD Multiplier (slider))`
+- Reflects rating migration, market RWA spikes, and counterparty credit risk expansion
+- Clamped to zero to prevent RWA deflation
 
 **PPNR Distribution:**
 - Declines over stress period based on PPNR Decline Rate slider
 - Shape: [1.0, 1.0-0.5d, 1.0-d, 1.0-d, 1.0-0.8d, 1.0-0.6d, 1.0-0.4d, 1.0-0.2d, 1.0]
-- Where d = PPNR Decline Rate slider value
+- Where d = PPNR Decline Rate slider value (used directly as decimal)
 
 **Credit Loss Distribution:**
 - Front-loaded using linear interpolation (0.05 to 0.15 weights)
@@ -236,16 +262,35 @@ For each quarter q:
 
 **RWA Inflation:**
 ```
-RWA[q] = Starting RWA × (1 + Cumulative Loss % × RWA Inflation % slider)
+RWA[q] = Linear interpolation from Starting RWA to Starting RWA × (1 + RWA Inflation %)
 ```
+- Modeled as linear stress expansion reflecting rating migration, market RWAs, and counterparty risk
 
 **Regulatory Buffers:**
-- **Minimum CET1**: User input (Regulatory Minimum CET1 %)
-- **CCB (Capital Conservation Buffer)**: Adjustable slider (0-5%)
-- **G-SIB Buffer**: Adjustable slider (0-3.5%)
+- **Minimum CET1**: User input (Regulatory Minimum CET1 % slider)
+- **CCB (Capital Conservation Buffer)**: Adjustable slider
+- **G-SIB Buffer**: Adjustable slider
 - **Total Requirement**: Minimum + CCB + G-SIB
+- **Note**: In real CCAR, SCB replaces CCB (not additive). Simplified model shows both for clarity.
 
 **Stress Capital Buffer (SCB):**
 ```
-SCB = Starting CET1 Ratio - Minimum CET1 Ratio (9Q Low)
+SCB = Max(SCB Floor %, Starting CET1 Ratio - Minimum CET1 Ratio (9Q Low, pre-dividend))
 ```
+- CCAR-compliant: Calculated on pre-dividend capital path per Fed SCB rule
+- SCB Floor: Regulatory minimum (typically 2.5%)
+
+**Breach Detection:**
+- Monitors CET1 ratio against Total Buffer Requirement (Minimum + CCB + G-SIB)
+- Alerts when ratio falls below total requirement in any quarter
+
+**Capital Waterfall Components:**
+- Starting CET1 (absolute)
+- Cumulative PPNR (incremental)
+- Cumulative Credit Losses (incremental, negative)
+- Trading Losses (incremental, negative)
+- Operational Losses (incremental, negative)
+- Taxes on Net Income (incremental, negative)
+- Dividends (incremental, negative)
+- Management Overlay (incremental, negative, applied in specified quarter)
+- Ending CET1 (absolute)
