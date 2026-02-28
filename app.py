@@ -135,6 +135,12 @@ df = load_data()
 # --------------------------------------------------
 # Train Model
 # --------------------------------------------------
+@st.cache_resource
+def train_model(X, y):
+    model = HistGradientBoostingClassifier()
+    model.fit(X, y)
+    return model
+
 features = [
     "credit_score",
     "loan_amount",
@@ -147,8 +153,7 @@ features = [
 X = df[features]
 y = df["default_flag"]
 
-model = HistGradientBoostingClassifier()
-model.fit(X, y)
+model = train_model(X, y)
 
 df["predicted_pd"] = model.predict_proba(X)[:, 1]
 model_auc = roc_auc_score(y, df["predicted_pd"])
@@ -248,12 +253,35 @@ def chat_with_ai(user_message):
     try:
         client = InferenceClient(token=token)
         
+        # Calculate additional metrics
+        LGD = 0.60
+        expected_loss = (df["default_probability_true"] * LGD * df["loan_amount"]).sum()
+        loss_ratio = expected_loss / total_portfolio_value
+        delinq_30 = (df["days_late"] > 30).mean()
+        
+        # Region breakdown
+        region_stats = df.groupby('region').agg({
+            'loan_amount': 'sum',
+            'predicted_pd': 'mean'
+        }).sort_values('loan_amount', ascending=False).head(3)
+        
         context = f"""
-Total Exposure: {total_portfolio_value:,.0f}
+Total Exposure: ${total_portfolio_value:,.0f}
+Total Loans: {total_loans:,}
+Avg Loan Size: ${avg_loan_size:,.0f}
+Avg Interest Rate: {avg_interest:.2f}%
 Default Rate: {default_rate:.2%}
 Delinquency Rate: {delinquency_rate:.2%}
+Delinquency 30+ days: {delinq_30:.2%}
+Avg Credit Score: {avg_credit_score:.0f}
+Avg DTI: {avg_dti:.2f}
+Expected Loss: ${expected_loss:,.0f}
+Loss Ratio: {loss_ratio:.2%}
 Largest Industry: {largest_industry} ({largest_industry_pct:.2%})
 Model ROC AUC: {model_auc:.3f}
+
+Top 3 Regions by Exposure:
+{region_stats.to_string()}
 """
         
         messages = [{"role": "system", "content": f"""You are a Managing Director in Credit Risk at a leading investment bank. Provide strategic insights on portfolio risk management, capital allocation, and regulatory considerations.
@@ -313,32 +341,34 @@ st.divider()
 
 # AI Commentary Modal
 if st.session_state.show_ai:
-    st.header("AI Risk Commentary")
-    
-    if st.button("Generate AI Summary"):
-        with st.spinner("Generating summary..."):
-            st.session_state.summary = generate_ai_summary()
-    
-    if st.session_state.summary:
-        st.write(st.session_state.summary)
+    col_ai = st.columns([1, 2, 1])[1]
+    with col_ai:
+        st.header("AI Risk Commentary")
         
-        st.divider()
-        st.subheader("Ask Follow-up Questions")
+        if st.button("Generate AI Summary"):
+            with st.spinner("Generating summary..."):
+                st.session_state.summary = generate_ai_summary()
         
-        for msg in st.session_state.chat_history:
-            with st.chat_message(msg["role"]):
-                st.write(msg["content"])
-        
-        if user_input := st.chat_input("Ask about the portfolio..."):
-            st.session_state.chat_history.append({"role": "user", "content": user_input})
-            with st.chat_message("user"):
-                st.write(user_input)
+        if st.session_state.summary:
+            st.write(st.session_state.summary)
             
-            with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    response = chat_with_ai(user_input)
-                    st.write(response)
-                    st.session_state.chat_history.append({"role": "assistant", "content": response})
+            st.divider()
+            st.subheader("Ask Follow-up Questions")
+            
+            for msg in st.session_state.chat_history:
+                with st.chat_message(msg["role"]):
+                    st.write(msg["content"])
+            
+            if user_input := st.chat_input("Ask about the portfolio..."):
+                st.session_state.chat_history.append({"role": "user", "content": user_input})
+                with st.chat_message("user"):
+                    st.write(user_input)
+                
+                with st.chat_message("assistant"):
+                    with st.spinner("Thinking..."):
+                        response = chat_with_ai(user_input)
+                        st.write(response)
+                        st.session_state.chat_history.append({"role": "assistant", "content": response})
 
 st.divider()
 
