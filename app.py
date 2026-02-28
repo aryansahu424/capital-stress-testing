@@ -61,10 +61,10 @@ with col_btn1:
             try:
                 exec(open("data_generator.py").read())
                 st.cache_data.clear()
-                st.success("New data generated successfully!")
+                st.success("New data generated!")
                 st.rerun()
             except Exception as e:
-                st.error(f"Error generating data: {str(e)}")
+                st.error(f"Error: {str(e)}")
 with col_btn2:
     if "show_ai" not in st.session_state:
         st.session_state.show_ai = False
@@ -72,7 +72,7 @@ with col_btn2:
         st.session_state.show_ai = not st.session_state.show_ai
 
 # Project Details Expander
-with st.expander("ℹ️ About This Project"):
+with st.expander("About This Project"):
     st.markdown("""
     ### Portfolio Monitoring Agent
     
@@ -113,6 +113,9 @@ from huggingface_hub import InferenceClient
 # --------------------------------------------------
 @st.cache_data
 def load_data():
+    import os
+    if not os.path.exists("synthetic_loans_100k.csv"):
+        exec(open("data_generator.py").read())
     return pd.read_csv("synthetic_loans_100k.csv")
 
 df = load_data()
@@ -252,27 +255,27 @@ st.markdown("## Portfolio Overview")
 col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
-    st.markdown("**Total Portfolio Value** <span class='tooltip'>ℹ️<span class='tooltiptext'>Total outstanding loan amount across all borrowers</span></span>", unsafe_allow_html=True)
+    st.markdown("**Total Portfolio Value** <span class='tooltip'>ℹ<span class='tooltiptext'>Total outstanding loan amount across all borrowers</span></span>", unsafe_allow_html=True)
     st.markdown(f"<h2 style='margin:0'>${total_portfolio_value/1e6:.1f}M</h2>", unsafe_allow_html=True)
     st.caption(f"Total Loans: {total_loans:,}")
 
 with col2:
-    st.markdown("**Avg Loan Size** <span class='tooltip'>ℹ️<span class='tooltiptext'>Average loan amount per borrower</span></span>", unsafe_allow_html=True)
+    st.markdown("**Avg Loan Size** <span class='tooltip'>ℹ<span class='tooltiptext'>Average loan amount per borrower</span></span>", unsafe_allow_html=True)
     st.markdown(f"<h2 style='margin:0'>${avg_loan_size:,.0f}</h2>", unsafe_allow_html=True)
     st.caption(f"Interest Rate: {avg_interest:.2f}%")
 
 with col3:
-    st.markdown("**Default Rate** <span class='tooltip'>ℹ️<span class='tooltiptext'>Percentage of loans that have defaulted (failed to repay)</span></span>", unsafe_allow_html=True)
+    st.markdown("**Default Rate** <span class='tooltip'>ℹ<span class='tooltiptext'>Percentage of loans that have defaulted (failed to repay)</span></span>", unsafe_allow_html=True)
     st.markdown(f"<h2 style='margin:0'>{default_rate:.2%}</h2>", unsafe_allow_html=True)
     st.caption(f"Delinquency: {delinquency_rate:.2%}")
 
 with col4:
-    st.markdown("**Avg Credit Score** <span class='tooltip'>ℹ️<span class='tooltiptext'>Average FICO score indicating borrower creditworthiness (300-850)</span></span>", unsafe_allow_html=True)
+    st.markdown("**Avg Credit Score** <span class='tooltip'>ℹ<span class='tooltiptext'>Average FICO score indicating borrower creditworthiness (300-850)</span></span>", unsafe_allow_html=True)
     st.markdown(f"<h2 style='margin:0'>{avg_credit_score:.0f}</h2>", unsafe_allow_html=True)
     st.caption(f"Avg DTI: {avg_dti:.2f}")
 
 with col5:
-    st.markdown("**Model AUC** <span class='tooltip'>ℹ️<span class='tooltiptext'>Area Under Curve - Model's ability to distinguish between defaulters and non-defaulters (0.5-1.0, higher is better)</span></span>", unsafe_allow_html=True)
+    st.markdown("**Model AUC** <span class='tooltip'>ℹ<span class='tooltiptext'>Area Under Curve - Model's ability to distinguish between defaulters and non-defaulters (0.5-1.0, higher is better)</span></span>", unsafe_allow_html=True)
     st.markdown(f"<h2 style='margin:0'>{model_auc:.3f}</h2>", unsafe_allow_html=True)
     st.caption(f"Top Industry: {largest_industry}")
 
@@ -419,17 +422,17 @@ loss_ratio = expected_loss / total_portfolio_value
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.markdown("**Expected Loss** <span class='tooltip'>ℹ️<span class='tooltiptext'>Probability of Default × Loss Given Default × Exposure - Expected monetary loss from defaults</span></span>", unsafe_allow_html=True)
+    st.markdown("**Expected Loss** <span class='tooltip'>ℹ<span class='tooltiptext'>Probability of Default × Loss Given Default × Exposure - Expected monetary loss from defaults</span></span>", unsafe_allow_html=True)
     st.markdown(f"<h2 style='margin:0'>${expected_loss/1e6:.2f}M</h2>", unsafe_allow_html=True)
 with col2:
-    st.markdown("**Loss Ratio** <span class='tooltip'>ℹ️<span class='tooltiptext'>Expected Loss / Total Portfolio Value - Percentage of portfolio expected to be lost</span></span>", unsafe_allow_html=True)
+    st.markdown("**Loss Ratio** <span class='tooltip'>ℹ<span class='tooltiptext'>Expected Loss / Total Portfolio Value - Percentage of portfolio expected to be lost</span></span>", unsafe_allow_html=True)
     st.markdown(f"<h2 style='margin:0'>{loss_ratio:.2%}</h2>", unsafe_allow_html=True)
 with col3:
     delinq_30 = (df["days_late"] > 30).mean()
-    st.markdown("**Delinquency Rate (30+ days)** <span class='tooltip'>ℹ️<span class='tooltiptext'>Percentage of loans with payments overdue by more than 30 days</span></span>", unsafe_allow_html=True)
+    st.markdown("**Delinquency Rate (30+ days)** <span class='tooltip'>ℹ<span class='tooltiptext'>Percentage of loans with payments overdue by more than 30 days</span></span>", unsafe_allow_html=True)
     st.markdown(f"<h2 style='margin:0'>{delinq_30:.2%}</h2>", unsafe_allow_html=True)
 with col4:
-    st.markdown("**LGD Assumption** <span class='tooltip'>ℹ️<span class='tooltiptext'>Loss Given Default - Percentage of exposure lost when a borrower defaults (industry standard: 40-60%)</span></span>", unsafe_allow_html=True)
+    st.markdown("**LGD Assumption** <span class='tooltip'>ℹ<span class='tooltiptext'>Loss Given Default - Percentage of exposure lost when a borrower defaults (industry standard: 40-60%)</span></span>", unsafe_allow_html=True)
     st.markdown(f"<h2 style='margin:0'>{LGD:.0%}</h2>", unsafe_allow_html=True)
 
 # Risk Bucketing
