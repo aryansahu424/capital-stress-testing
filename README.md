@@ -109,7 +109,7 @@ streamlit run app.py
 ### AI Functions
 - Executive summary generation with portfolio context
 - Interactive Q&A with chat history
-- Context-aware responses including risk metrics, concentration alerts, and stress scenarios
+- Context-aware responses including risk metrics, concentration alerts, stress scenarios, and capital stress engine projections
 
 ## Features in Detail
 
@@ -128,6 +128,7 @@ streamlit run app.py
   - Delinquency rates (30+ days)
   - Top 5 industries and top 3 regions by exposure
   - Top 10 riskiest loans
+  - Capital Stress Engine metrics (CET1 ratios, PPNR, credit losses, regulatory buffers)
 - Context-aware responses with portfolio data
 - Chat history maintained in session state
 

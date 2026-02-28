@@ -10,7 +10,7 @@ from huggingface_hub import InferenceClient
 st.set_page_config(layout="wide")
 
 # Sidebar with Info
-st.sidebar.title("Portfolio Monitor")
+st.sidebar.title("Capital Stress Testing Engine")
 st.sidebar.markdown("### Quick Navigation")
 st.sidebar.markdown("""
 - [Portfolio Overview](#portfolio-overview)
@@ -334,6 +334,11 @@ def chat_with_ai(user_message):
         industry_pct = industry_exposure / industry_exposure.sum()
         high_conc_industries = industry_pct[industry_pct > 0.30]
         
+        # Capital stress metrics
+        starting_cet1_default = 100.0
+        starting_rwa_default = 800.0
+        starting_ratio_calc = (starting_cet1_default / starting_rwa_default) * 100
+        
         context = f"""
 PORTFOLIO OVERVIEW:
 - Total Exposure: ${total_portfolio_value:,.0f}
@@ -366,10 +371,19 @@ STRESS TESTING SCENARIOS:
 - Recession Scenario (2.5x PD): ${recession_loss:,.0f} (+{((recession_loss-base_loss)/base_loss*100):.1f}%)
 - Rate Shock Scenario (1.8x PD): ${rate_shock_loss:,.0f} (+{((rate_shock_loss-base_loss)/base_loss*100):.1f}%)
 
-CAPITAL STRESS ENGINE:
-- Dashboard includes 9-quarter capital projections with PPNR, credit losses, trading losses, operational losses
-- Tracks CET1 ratio against regulatory minimums and buffer requirements
-- Supports advanced controls: tax rates, dividend policies, management overlays, CCB, G-SIB buffers
+CAPITAL STRESS ENGINE (9-Quarter Projection):
+- Starting CET1 Capital: $100.0B (default)
+- Starting RWA: $800.0B (default)
+- Starting CET1 Ratio: {starting_ratio_calc:.2f}%
+- Regulatory Minimum CET1: 10.5% (default)
+- 9Q PPNR: $40.0B (default)
+- 9Q Credit Losses: $35.0B (default)
+- Trading Losses: $8.0B (default)
+- Operational Losses: $5.0B (default)
+- RWA Inflation: 12.5% (default)
+- PPNR Decline Rate: 40% (default)
+- Advanced Controls: Tax rates (21% default), dividend policies (40% default), management overlays, CCB (2.5% default), G-SIB buffers (1.5% default)
+- Tracks quarterly CET1 ratio movement, breach detection, and Stress Capital Buffer (SCB) calculation
 """
         
         messages = [{"role": "system", "content": f"""You are a Managing Director in Credit Risk at a leading investment bank. Provide strategic insights on portfolio risk management, capital allocation, and regulatory considerations.
