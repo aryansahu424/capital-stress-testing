@@ -1,0 +1,8 @@
+numpy
+pandas
+streamlit
+scikit-learn
+matplotlib
+requests
+plotly
+huggingface_hub
