@@ -1,8 +1,9 @@
 numpy
 pandas
-streamlit>=1.28.0
+streamlit>1.28.0
 scikit-learn
 matplotlib
 requests
 plotly
 huggingface_hub
+altair>5.0.0
