@@ -341,34 +341,32 @@ st.divider()
 
 # AI Commentary Modal
 if st.session_state.show_ai:
-    col_ai = st.columns([1, 2, 1])[1]
-    with col_ai:
-        st.header("AI Risk Commentary")
+    st.header("AI Risk Commentary")
+    
+    if st.button("Generate AI Summary"):
+        with st.spinner("Generating summary..."):
+            st.session_state.summary = generate_ai_summary()
+    
+    if st.session_state.summary:
+        st.write(st.session_state.summary)
         
-        if st.button("Generate AI Summary"):
-            with st.spinner("Generating summary..."):
-                st.session_state.summary = generate_ai_summary()
+        st.divider()
+        st.subheader("Ask Follow-up Questions")
         
-        if st.session_state.summary:
-            st.write(st.session_state.summary)
+        for msg in st.session_state.chat_history:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+        
+        if user_input := st.chat_input("Ask about the portfolio..."):
+            st.session_state.chat_history.append({"role": "user", "content": user_input})
+            with st.chat_message("user"):
+                st.write(user_input)
             
-            st.divider()
-            st.subheader("Ask Follow-up Questions")
-            
-            for msg in st.session_state.chat_history:
-                with st.chat_message(msg["role"]):
-                    st.write(msg["content"])
-            
-            if user_input := st.chat_input("Ask about the portfolio..."):
-                st.session_state.chat_history.append({"role": "user", "content": user_input})
-                with st.chat_message("user"):
-                    st.write(user_input)
-                
-                with st.chat_message("assistant"):
-                    with st.spinner("Thinking..."):
-                        response = chat_with_ai(user_input)
-                        st.write(response)
-                        st.session_state.chat_history.append({"role": "assistant", "content": response})
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    response = chat_with_ai(user_input)
+                    st.write(response)
+                    st.session_state.chat_history.append({"role": "assistant", "content": response})
 
 st.divider()
 
