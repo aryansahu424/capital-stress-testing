@@ -213,7 +213,7 @@ Deliver in executive summary format with actionable insights."""}
         response = client.chat_completion(
             messages=messages,
             model="meta-llama/Llama-3.2-3B-Instruct",
-            max_tokens=500,
+            max_tokens=800,
             temperature=0.4
         )
         
@@ -250,7 +250,7 @@ Respond with senior-level analysis appropriate for executive decision-making."""
         response = client.chat_completion(
             messages=messages,
             model="meta-llama/Llama-3.2-3B-Instruct",
-            max_tokens=500,
+            max_tokens=800,
             temperature=0.4
         )
         
