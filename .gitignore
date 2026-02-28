@@ -30,7 +30,6 @@ wheels/
 # Data files
 *.parquet
 
-
 # IDE
 .vscode/
 .idea/

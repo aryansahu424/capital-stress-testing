@@ -187,12 +187,30 @@ def generate_ai_summary():
     try:
         client = InferenceClient(token=token)
         
+        # Get top 10 risky loans
+        top_10 = df.nlargest(10, 'predicted_pd')[['industry', 'region', 'loan_amount', 'credit_score', 'predicted_pd']]
+        
+        # Get industry breakdown
+        industry_stats = df.groupby('industry').agg({
+            'loan_amount': 'sum',
+            'predicted_pd': 'mean'
+        }).sort_values('loan_amount', ascending=False).head(5)
+        
         context = f"""
-Total Exposure: {total_portfolio_value:,.0f}
+Total Exposure: ${total_portfolio_value:,.0f}
+Total Loans: {total_loans:,}
 Default Rate: {default_rate:.2%}
 Delinquency Rate: {delinquency_rate:.2%}
+Avg Credit Score: {avg_credit_score:.0f}
+Avg DTI: {avg_dti:.2f}
 Largest Industry: {largest_industry} ({largest_industry_pct:.2%})
 Model ROC AUC: {model_auc:.3f}
+
+Top 5 Industries by Exposure:
+{industry_stats.to_string()}
+
+Top 10 Riskiest Loans Summary:
+{top_10.to_string()}
 """
 
         messages = [
