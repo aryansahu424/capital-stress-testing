@@ -17,19 +17,54 @@ st.markdown("""
     justify-content: space-between;
     align-items: center;
 }
+.tooltip {
+    position: relative;
+    display: inline-block;
+    cursor: help;
+    color: #666;
+    font-size: 0.8em;
+    margin-left: 4px;
+}
+.tooltip .tooltiptext {
+    visibility: hidden;
+    width: 250px;
+    background-color: #f9f9f9;
+    color: #333;
+    text-align: left;
+    border-radius: 6px;
+    border: 1px solid #ddd;
+    padding: 8px;
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;
+    left: 50%;
+    margin-left: -125px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+    line-height: 1.4;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.tooltip:hover .tooltiptext {
+    visibility: visible;
+    opacity: 1;
+}
 </style>
 """, unsafe_allow_html=True)
 
 col_title, col_btn1, col_btn2 = st.columns([3, 1, 1])
 with col_title:
     st.title("Portfolio Monitoring Agent")
-    st.write("HF token detected:", bool(st.secrets.get("HF_TOKEN")))
 with col_btn1:
     if st.button("Generate New Data", key="gen_data_btn"):
         with st.spinner("Generating new data..."):
-            exec(open("data_generator.py").read())
-            st.cache_data.clear()
-            st.rerun()
+            try:
+                exec(open("data_generator.py").read())
+                st.cache_data.clear()
+                st.success("New data generated successfully!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error generating data: {str(e)}")
 with col_btn2:
     if "show_ai" not in st.session_state:
         st.session_state.show_ai = False
@@ -212,28 +247,33 @@ Respond with senior-level analysis appropriate for executive decision-making."""
 # PAGE LAYOUT
 # --------------------------------------------------
 
-st.header("Portfolio Overview")
+st.markdown("## Portfolio Overview")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
-    st.metric("Total Portfolio Value", f"${total_portfolio_value/1e6:.1f}M")
+    st.markdown("**Total Portfolio Value** <span class='tooltip'>ℹ️<span class='tooltiptext'>Total outstanding loan amount across all borrowers</span></span>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='margin:0'>${total_portfolio_value/1e6:.1f}M</h2>", unsafe_allow_html=True)
     st.caption(f"Total Loans: {total_loans:,}")
 
 with col2:
-    st.metric("Avg Loan Size", f"${avg_loan_size:,.0f}")
+    st.markdown("**Avg Loan Size** <span class='tooltip'>ℹ️<span class='tooltiptext'>Average loan amount per borrower</span></span>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='margin:0'>${avg_loan_size:,.0f}</h2>", unsafe_allow_html=True)
     st.caption(f"Interest Rate: {avg_interest:.2f}%")
 
 with col3:
-    st.metric("Default Rate", f"{default_rate:.2%}")
+    st.markdown("**Default Rate** <span class='tooltip'>ℹ️<span class='tooltiptext'>Percentage of loans that have defaulted (failed to repay)</span></span>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='margin:0'>{default_rate:.2%}</h2>", unsafe_allow_html=True)
     st.caption(f"Delinquency: {delinquency_rate:.2%}")
 
 with col4:
-    st.metric("Avg Credit Score", f"{avg_credit_score:.0f}")
+    st.markdown("**Avg Credit Score** <span class='tooltip'>ℹ️<span class='tooltiptext'>Average FICO score indicating borrower creditworthiness (300-850)</span></span>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='margin:0'>{avg_credit_score:.0f}</h2>", unsafe_allow_html=True)
     st.caption(f"Avg DTI: {avg_dti:.2f}")
 
 with col5:
-    st.metric("Model AUC", f"{model_auc:.3f}")
+    st.markdown("**Model AUC** <span class='tooltip'>ℹ️<span class='tooltiptext'>Area Under Curve - Model's ability to distinguish between defaulters and non-defaulters (0.5-1.0, higher is better)</span></span>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='margin:0'>{model_auc:.3f}</h2>", unsafe_allow_html=True)
     st.caption(f"Top Industry: {largest_industry}")
 
 st.divider()
@@ -367,5 +407,79 @@ fig = px.bar(industry_stress, x="industry", y=["base_el", "stressed_el"],
 fig.update_layout(legend_title_text="Scenario", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
 fig.for_each_trace(lambda t: t.update(name=t.name.replace("base_el", "Base").replace("stressed_el", "Stressed")))
 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+st.divider()
+
+# Risk Engine Analytics
+st.markdown("## Risk Engine Analytics")
+
+LGD = 0.60
+expected_loss = (df["default_probability_true"] * LGD * df["loan_amount"]).sum()
+loss_ratio = expected_loss / total_portfolio_value
+
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    st.markdown("**Expected Loss** <span class='tooltip'>ℹ️<span class='tooltiptext'>Probability of Default × Loss Given Default × Exposure - Expected monetary loss from defaults</span></span>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='margin:0'>${expected_loss/1e6:.2f}M</h2>", unsafe_allow_html=True)
+with col2:
+    st.markdown("**Loss Ratio** <span class='tooltip'>ℹ️<span class='tooltiptext'>Expected Loss / Total Portfolio Value - Percentage of portfolio expected to be lost</span></span>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='margin:0'>{loss_ratio:.2%}</h2>", unsafe_allow_html=True)
+with col3:
+    delinq_30 = (df["days_late"] > 30).mean()
+    st.markdown("**Delinquency Rate (30+ days)** <span class='tooltip'>ℹ️<span class='tooltiptext'>Percentage of loans with payments overdue by more than 30 days</span></span>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='margin:0'>{delinq_30:.2%}</h2>", unsafe_allow_html=True)
+with col4:
+    st.markdown("**LGD Assumption** <span class='tooltip'>ℹ️<span class='tooltiptext'>Loss Given Default - Percentage of exposure lost when a borrower defaults (industry standard: 40-60%)</span></span>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='margin:0'>{LGD:.0%}</h2>", unsafe_allow_html=True)
+
+# Risk Bucketing
+df_risk = df.copy()
+def risk_bucket(pd_value):
+    if pd_value < 0.05:
+        return "Low Risk"
+    elif pd_value < 0.12:
+        return "Medium Risk"
+    else:
+        return "High Risk"
+
+df_risk["risk_bucket"] = df_risk["default_probability_true"].apply(risk_bucket)
+risk_dist = df_risk.groupby("risk_bucket").agg({
+    "loan_amount": "sum",
+    "loan_id": "count"
+}).reset_index()
+risk_dist.columns = ["Risk Bucket", "Total Exposure", "Loan Count"]
+risk_dist["Exposure %"] = (risk_dist["Total Exposure"] / total_portfolio_value * 100).round(2)
+
+col1, col2 = st.columns(2)
+with col1:
+    st.subheader("Risk Distribution")
+    fig = px.bar(risk_dist, x="Risk Bucket", y="Total Exposure",
+                 color="Risk Bucket",
+                 color_discrete_map={"Low Risk": "#2ecc71", "Medium Risk": "#f39c12", "High Risk": "#e74c3c"})
+    fig.update_layout(showlegend=False)
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+with col2:
+    st.subheader("Risk Bucket Summary")
+    st.dataframe(
+        risk_dist,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Total Exposure": st.column_config.NumberColumn(format="$%.0f"),
+            "Exposure %": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.2f%%")
+        }
+    )
+
+# Concentration Risk
+concentration_threshold = 0.30
+industry_conc = industry_pct[industry_pct > concentration_threshold]
+if len(industry_conc) > 0:
+    st.warning(f"⚠️ Concentration Alert: {len(industry_conc)} industry(ies) exceed {concentration_threshold:.0%} threshold")
+    conc_df = pd.DataFrame({
+        "Industry": industry_conc.index,
+        "Concentration %": (industry_conc.values * 100).round(2)
+    })
+    st.dataframe(conc_df, use_container_width=True, hide_index=True)
 
 st.divider()

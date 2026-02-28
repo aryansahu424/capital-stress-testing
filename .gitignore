@@ -28,9 +28,8 @@ wheels/
 .streamlit/config.toml
 
 # Data files
-*.csv
 *.parquet
-synthetic_loans_*.csv
+
 
 # IDE
 .vscode/
